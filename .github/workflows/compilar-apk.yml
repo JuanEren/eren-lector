@@ -4,36 +4,49 @@ on:
   push:
   workflow_dispatch:
 
-permissions:
-  contents: read
-
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      AZURE_SPEECH_KEY: ${{ secrets.AZURE_SPEECH_KEY }}
+      AZURE_SPEECH_REGION: ${{ secrets.AZURE_SPEECH_REGION }}
+      AZURE_SPEECH_VOICE: es-ES-ElviraNeural
 
     steps:
       - name: Descargar repositorio
         uses: actions/checkout@v4
 
       - name: Descomprimir proyecto
-        run: unzip -q Eren-Leo-y-entiendo-Android.zip
+        run: unzip -o Eren-Leo-y-entiendo-Android.zip
 
       - name: Preparar Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: '17'
 
       - name: Preparar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.9"
+          gradle-version: '8.9'
 
-      - name: Preparar Android
+      - name: Preparar Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Instalar Android SDK
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Preparar Node para las locuciones
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Recuperar locuciones de Azure
+        uses: actions/cache@v4
+        with:
+          path: eren-android/app/src/main/assets/www/assets/audio
+          key: azure-tts-v1-${{ hashFiles('Eren-Leo-y-entiendo-Android.zip') }}
+
+      - name: Generar locuciones expresivas con Azure
+        working-directory: eren-android
+        run: node scripts/generate-azure-audio.mjs
 
       - name: Compilar APK
         working-directory: eren-android
