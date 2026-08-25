@@ -1,0 +1,147 @@
+name: Compilar APK
+
+on:
+  push:
+    paths:
+      - 'Eren-Leo-y-entiendo-Android.zip'
+      - 'Eren-GitHub-Actualizacion-R*.zip'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      AZURE_SPEECH_KEY: ${{ secrets.AZURE_SPEECH_KEY }}
+      AZURE_SPEECH_REGION: ${{ secrets.AZURE_SPEECH_REGION }}
+      AZURE_SPEECH_VOICE: es-ES-ElviraNeural
+      BASE_ARCHIVE: Eren-Leo-y-entiendo-Android.zip
+      BASE_SHA256: 155ba166ebc9e4e1d4b5f2d7f1aba3ca2fa511d4e9211cb38489d7c0242f60e9
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Verificar base, descomprimir y aplicar actualizaciones
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ ! -f "$BASE_ARCHIVE" ]]; then
+            echo "::error::Falta la base permanente $BASE_ARCHIVE en la raíz del repositorio."
+            exit 1
+          fi
+          echo "$BASE_SHA256  $BASE_ARCHIVE" | sha256sum -c -
+
+          SOURCE_ROOT=$(mktemp -d "$RUNNER_TEMP/eren-source-r05.XXXXXX")
+          unzip -q "$BASE_ARCHIVE" -d "$SOURCE_ROOT"
+
+          if [[ -d "$SOURCE_ROOT/eren-android" ]]; then
+            PROJECT_DIR="$SOURCE_ROOT/eren-android"
+          else
+            echo "::error::La base no contiene la carpeta eren-android esperada."
+            exit 1
+          fi
+
+          mapfile -t updates < <(find "$GITHUB_WORKSPACE" -maxdepth 1 -type f -name 'Eren-GitHub-Actualizacion-R*.zip' -printf '%f\n' | sort -V)
+          if (( ${#updates[@]} == 0 )); then
+            echo "::error::No existe ninguna actualización Eren-GitHub-Actualizacion-RNN.zip."
+            exit 1
+          fi
+
+          for update in "${updates[@]}"; do
+            update_size=$(stat -c '%s' "$update")
+            if (( update_size > 20971520 )); then
+              echo "::error::$update supera el límite contractual de 20 MB."
+              exit 1
+            fi
+            if unzip -Z1 "$update" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
+              echo "::error::$update contiene una ruta no segura."
+              exit 1
+            fi
+
+            mapfile -t delete_entries < <(unzip -Z1 "$update" | grep -E '^docs/updates/R[0-9]+/DELETE_FILES\.txt$' || true)
+            mapfile -t checksum_entries < <(unzip -Z1 "$update" | grep -E '^docs/updates/R[0-9]+/SHA256SUMS_UPDATE_R[0-9]+\.txt$' || true)
+            if (( ${#delete_entries[@]} != 1 || ${#checksum_entries[@]} != 1 )); then
+              echo "::error::$update debe contener exactamente una lista de eliminaciones y una lista SHA-256."
+              exit 1
+            fi
+
+            while IFS= read -r relative || [[ -n "$relative" ]]; do
+              relative="${relative%$'\r'}"
+              [[ -z "$relative" || "$relative" == \#* ]] && continue
+              if [[ "$relative" == /* || "$relative" =~ (^|/)\.\.(/|$) ]]; then
+                echo "::error::Ruta de eliminación no segura en $update: $relative"
+                exit 1
+              fi
+              target="$PROJECT_DIR/$relative"
+              if [[ -d "$target" ]]; then
+                echo "::error::La actualización intenta borrar un directorio: $relative"
+                exit 1
+              fi
+              if [[ -f "$target" || -L "$target" ]]; then
+                unlink -- "$target"
+              fi
+            done < <(unzip -p "$update" "${delete_entries[0]}")
+
+            unzip -qo "$update" -d "$PROJECT_DIR"
+            (
+              cd "$PROJECT_DIR"
+              sha256sum -c "${checksum_entries[0]}"
+            )
+            echo "Actualización aplicada y verificada: $update"
+          done
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Preparar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Preparar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Preparar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Preparar Node para las locuciones
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Recuperar locuciones de Azure
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PROJECT_DIR }}/app/src/main/assets/www/assets/audio
+          key: azure-tts-v2-${{ hashFiles('Eren-Leo-y-entiendo-Android.zip', 'Eren-GitHub-Actualizacion-R*.zip') }}
+
+      - name: Validar catálogo de locuciones en Node
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: node tests/azure-catalogue-smoke.mjs
+
+      - name: Generar locuciones expresivas con Azure
+        if: env.AZURE_SPEECH_KEY != '' && env.AZURE_SPEECH_REGION != ''
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: node scripts/generate-azure-audio.mjs
+
+      - name: Validar graybox v31 y corrección CI R05
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: node tests/graybox-smoke.mjs
+
+      - name: Compilar APK
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: gradle assembleDebug
+
+      - name: Guardar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Eren-Leo-y-entiendo-APK
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
