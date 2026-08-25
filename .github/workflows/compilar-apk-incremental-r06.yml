@@ -1,0 +1,174 @@
+name: Compilar APK incremental R06
+run-name: R06 incremental · ${{ github.event_name }} · ${{ github.sha }}
+
+on:
+  push:
+    paths:
+      - '.github/workflows/compilar-apk-incremental-r06.yml'
+      - 'Eren-GitHub-Actualizacion-R*.zip'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  r06_incremental:
+    name: R06 · aplicar actualización y compilar
+    runs-on: ubuntu-latest
+    env:
+      AZURE_SPEECH_KEY: ${{ secrets.AZURE_SPEECH_KEY }}
+      AZURE_SPEECH_REGION: ${{ secrets.AZURE_SPEECH_REGION }}
+      AZURE_SPEECH_VOICE: es-ES-ElviraNeural
+      BASE_ARCHIVE: Eren-Leo-y-entiendo-Android.zip
+      BASE_SHA256: 155ba166ebc9e4e1d4b5f2d7f1aba3ca2fa511d4e9211cb38489d7c0242f60e9
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Confirmar workflow incremental R06
+        run: |
+          echo "EREN_INCREMENTAL_R06_ACTIVE"
+          echo "Este flujo aplica los ZIP R05+ antes de ejecutar Node o Gradle."
+
+      - name: Verificar base y aplicar actualizaciones
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          base_path="$GITHUB_WORKSPACE/$BASE_ARCHIVE"
+          if [[ ! -f "$base_path" ]]; then
+            echo "::error::Falta la base permanente $BASE_ARCHIVE en la raíz."
+            exit 1
+          fi
+          echo "$BASE_SHA256  $base_path" | sha256sum -c -
+
+          source_root=$(mktemp -d "$RUNNER_TEMP/eren-source-r06.XXXXXX")
+          unzip -q "$base_path" -d "$source_root"
+          project_dir="$source_root/eren-android"
+          if [[ ! -d "$project_dir" ]]; then
+            echo "::error::La base no contiene la carpeta eren-android esperada."
+            exit 1
+          fi
+
+          mapfile -t updates < <(
+            find "$GITHUB_WORKSPACE" -maxdepth 1 -type f \
+              -name 'Eren-GitHub-Actualizacion-R*.zip' \
+              -printf '%f\n' | sort -V
+          )
+          if (( ${#updates[@]} == 0 )); then
+            echo "::error::No existe ninguna actualización Eren-GitHub-Actualizacion-RNN.zip."
+            exit 1
+          fi
+
+          for update in "${updates[@]}"; do
+            update_path="$GITHUB_WORKSPACE/$update"
+            update_size=$(stat -c '%s' "$update_path")
+            if (( update_size > 20971520 )); then
+              echo "::error::$update supera el límite contractual de 20 MB."
+              exit 1
+            fi
+            if unzip -Z1 "$update_path" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
+              echo "::error::$update contiene una ruta no segura."
+              exit 1
+            fi
+
+            mapfile -t delete_entries < <(
+              unzip -Z1 "$update_path" |
+                grep -E '^docs/updates/R[0-9]+/DELETE_FILES\.txt$' || true
+            )
+            mapfile -t checksum_entries < <(
+              unzip -Z1 "$update_path" |
+                grep -E '^docs/updates/R[0-9]+/SHA256SUMS_UPDATE_R[0-9]+\.txt$' || true
+            )
+            if (( ${#delete_entries[@]} != 1 || ${#checksum_entries[@]} != 1 )); then
+              echo "::error::$update debe contener una lista de eliminaciones y una lista SHA-256."
+              exit 1
+            fi
+
+            while IFS= read -r relative || [[ -n "$relative" ]]; do
+              relative="${relative%$'\r'}"
+              [[ -z "$relative" || "$relative" == \#* ]] && continue
+              if [[ "$relative" == /* || "$relative" =~ (^|/)\.\.(/|$) ]]; then
+                echo "::error::Ruta de eliminación no segura en $update: $relative"
+                exit 1
+              fi
+              target="$project_dir/$relative"
+              if [[ -d "$target" ]]; then
+                echo "::error::La actualización intenta borrar un directorio: $relative"
+                exit 1
+              fi
+              if [[ -f "$target" || -L "$target" ]]; then
+                unlink -- "$target"
+              fi
+            done < <(unzip -p "$update_path" "${delete_entries[0]}")
+
+            unzip -qo "$update_path" -d "$project_dir"
+            (
+              cd "$project_dir"
+              sha256sum -c "${checksum_entries[0]}"
+            )
+            echo "Actualización aplicada y verificada: $update"
+          done
+
+          if ! grep -q "extractAudioCatalogue" "$project_dir/scripts/generate-azure-audio.mjs"; then
+            echo "::error::El generador corregido R05 no está presente tras aplicar actualizaciones."
+            exit 1
+          fi
+          if grep -q "vm.runInContext" "$project_dir/scripts/generate-azure-audio.mjs"; then
+            echo "::error::Sigue presente el generador R04 antiguo."
+            exit 1
+          fi
+
+          echo "R05_PATCH_CONFIRMED"
+          echo "PROJECT_DIR=$project_dir" >> "$GITHUB_ENV"
+
+      - name: Preparar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Preparar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Preparar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Preparar Node para las locuciones
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Recuperar locuciones de Azure
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PROJECT_DIR }}/app/src/main/assets/www/assets/audio
+          key: azure-tts-r06-${{ hashFiles('Eren-Leo-y-entiendo-Android.zip', 'Eren-GitHub-Actualizacion-R*.zip') }}
+
+      - name: Validar catálogo corregido R05
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: node tests/azure-catalogue-smoke.mjs
+
+      - name: Generar locuciones expresivas con Azure
+        if: env.AZURE_SPEECH_KEY != '' && env.AZURE_SPEECH_REGION != ''
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: node scripts/generate-azure-audio.mjs
+
+      - name: Validar graybox v31 sin cambios
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: node tests/graybox-smoke.mjs
+
+      - name: Compilar APK
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: gradle assembleDebug
+
+      - name: Guardar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Eren-Leo-y-entiendo-APK
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
