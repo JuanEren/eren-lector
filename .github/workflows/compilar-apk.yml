@@ -1,7 +1,7 @@
-name: Compilar APK
+# HISTÓRICO: conservado para auditoría. Para la baseline R11 se usa build-apk.yml.
+name: Histórico · Compilar APK legado
 
 on:
-  push:
   workflow_dispatch:
 
 jobs:

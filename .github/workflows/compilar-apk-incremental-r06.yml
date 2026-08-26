@@ -1,11 +1,8 @@
-name: Compilar APK incremental R06
-run-name: R06 incremental · ${{ github.event_name }} · ${{ github.sha }}
+# HISTÓRICO: conservado para auditoría. Para la baseline R11 se usa build-apk.yml.
+name: Histórico · Compilar APK incremental R06
+run-name: Histórico R06 · ${{ github.event_name }} · ${{ github.sha }}
 
 on:
-  push:
-    paths:
-      - '.github/workflows/compilar-apk-incremental-r06.yml'
-      - 'Eren-GitHub-Actualizacion-R*.zip'
   workflow_dispatch:
 
 permissions:
