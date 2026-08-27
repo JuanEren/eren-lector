@@ -2,6 +2,17 @@ name: Compilar candidata GB02 R04 R16 visual
 run-name: GB02 R04 · R16 visual · ${{ github.ref_name }} · ${{ github.sha }}
 
 on:
+  push:
+    branches:
+      - codex/gb02-r16-visual-integration-20260827
+    paths:
+      - .github/workflows/build-apk.yml
+      - Eren-GitHub-Actualizacion-R14.zip
+      - Eren-GitHub-Actualizacion-R14.zip.sha256
+      - Eren-GitHub-Actualizacion-R15.zip
+      - Eren-GitHub-Actualizacion-R15.zip.sha256
+      - Eren-GitHub-Actualizacion-R16.zip
+      - Eren-GitHub-Actualizacion-R16.zip.sha256
   workflow_dispatch:
 
 permissions:
