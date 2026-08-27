@@ -1,5 +1,5 @@
-name: Compilar candidata GB02 R04 R16 visual
-run-name: GB02 R04 · R16 visual · ${{ github.ref_name }} · ${{ github.sha }}
+name: Compilar candidata GB02 R04 R17 correcciones
+run-name: GB02 R04 · R17 correcciones · ${{ github.ref_name }} · ${{ github.sha }}
 
 on:
   push:
@@ -7,20 +7,16 @@ on:
       - codex/gb02-r16-visual-integration-20260827
     paths:
       - .github/workflows/build-apk.yml
-      - Eren-GitHub-Actualizacion-R14.zip
-      - Eren-GitHub-Actualizacion-R14.zip.sha256
-      - Eren-GitHub-Actualizacion-R15.zip
-      - Eren-GitHub-Actualizacion-R15.zip.sha256
-      - Eren-GitHub-Actualizacion-R16.zip
-      - Eren-GitHub-Actualizacion-R16.zip.sha256
+      - Eren-GitHub-Actualizacion-R17.zip
+      - Eren-GitHub-Actualizacion-R17.zip.sha256
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  build_candidate_r16:
-    name: Aplicar R11 + R14 + R15 + R16, validar y compilar
+  build_candidate_r17:
+    name: Aplicar R11 + R14 + R15 + R16 + R17, validar y compilar
     runs-on: ubuntu-latest
     env:
       AZURE_SPEECH_KEY: ${{ secrets.AZURE_SPEECH_KEY }}
@@ -33,8 +29,9 @@ jobs:
       R14_SHA256: 12c774e8713f76257a9f3e0e062d5998ba54151d17ae7cee0c3e749d0f1e3d1d
       R15_SHA256: 2aec41d7e8c4198759519216070876bab438d1d33e3c73e0733d5261e393c13f
       R16_SHA256: cc0606cab0e3d472531005757a1ba289b9dbeadb02563802fe3632c02cbada35
+      R17_SHA256: 0de78652ced4c3cb3b0acafa4e86fc76d483fe1b196bb5bb3c0713648579db94
       CONTRACT_SHA256: 02692ced658695b7e5ce95d9b1709448835b16427812e8393c61bc67466e6055
-      ART_SOURCE_SHA256: 9839aed8faf4f3412e9ec7b99fd14a54bfc319ba7014299910c329f3868d0e90
+      S012_R17_SHA256: cdf8ef053ace7551c74c77ab3ea7ff63f156df7466d76fa0a4bf0813f9024f30
 
     steps:
       - name: Descargar el ramal seleccionado
@@ -62,18 +59,19 @@ jobs:
               .github/workflows/build-apk.yml|\
               Eren-GitHub-Actualizacion-R14.zip|Eren-GitHub-Actualizacion-R14.zip.sha256|\
               Eren-GitHub-Actualizacion-R15.zip|Eren-GitHub-Actualizacion-R15.zip.sha256|\
-              Eren-GitHub-Actualizacion-R16.zip|Eren-GitHub-Actualizacion-R16.zip.sha256)
+              Eren-GitHub-Actualizacion-R16.zip|Eren-GitHub-Actualizacion-R16.zip.sha256|\
+              Eren-GitHub-Actualizacion-R17.zip|Eren-GitHub-Actualizacion-R17.zip.sha256)
                 ;;
               *)
-                echo "::error::Cambio fuera del alcance R16: $path"
+                echo "::error::Cambio fuera del alcance R17: $path"
                 exit 1
                 ;;
             esac
           done
-          printf 'Cambios autorizados R16:\n'
+          printf 'Cambios autorizados R17:\n'
           printf ' - %s\n' "${changed_files[@]}"
 
-      - name: Verificar archivos y reconstruir R11 + R14 + R15 + R16
+      - name: Verificar archivos y reconstruir R11 + R14 + R15 + R16 + R17
         shell: bash
         run: |
           set -euo pipefail
@@ -90,6 +88,7 @@ jobs:
             "Eren-GitHub-Actualizacion-R14.zip|$R14_SHA256"
             "Eren-GitHub-Actualizacion-R15.zip|$R15_SHA256"
             "Eren-GitHub-Actualizacion-R16.zip|$R16_SHA256"
+            "Eren-GitHub-Actualizacion-R17.zip|$R17_SHA256"
           )
           preserved_updates=(
             'Eren-GitHub-Actualizacion-R12.zip|5069a166150cb3b2d3a756fb9ae0dc91fe711187e038ed9ad46657e4cb39ee2a'
@@ -107,9 +106,10 @@ jobs:
           grep -Fxq "$R14_SHA256  Eren-GitHub-Actualizacion-R14.zip" Eren-GitHub-Actualizacion-R14.zip.sha256
           grep -Fxq "$R15_SHA256  Eren-GitHub-Actualizacion-R15.zip" Eren-GitHub-Actualizacion-R15.zip.sha256
           grep -Fxq "$R16_SHA256  Eren-GitHub-Actualizacion-R16.zip" Eren-GitHub-Actualizacion-R16.zip.sha256
+          grep -Fxq "$R17_SHA256  Eren-GitHub-Actualizacion-R17.zip" Eren-GitHub-Actualizacion-R17.zip.sha256
           echo 'R12 y R13 verificados: preservados y fuera de la cadena de aplicación.'
 
-          source_root=$(mktemp -d "$RUNNER_TEMP/eren-r16.XXXXXX")
+          source_root=$(mktemp -d "$RUNNER_TEMP/eren-r17.XXXXXX")
           unzip -q "$base_path" -d "$source_root"
           project_dir="$source_root/eren-android"
           test -d "$project_dir"
@@ -159,10 +159,12 @@ jobs:
             echo "Aplicada y verificada: $archive"
           done
 
-          grep -q '39.0.0-functional-art-gb02-r04-candidate-r16' "$project_dir/app/build.gradle.kts"
+          grep -q '40.0.0-playtest-correction-gb02-r04-candidate-r17' "$project_dir/app/build.gradle.kts"
+          grep -q 'GB02-R04-PLAYTEST-R17-v1' "$project_dir/app/src/main/assets/www/graybox-game.js"
           grep -q "$CONTRACT_SHA256" "$project_dir/app/src/main/assets/www/graybox-game.js"
-          grep -q "$ART_SOURCE_SHA256" "$project_dir/app/src/main/assets/www/graybox-game.js"
-          test "$(find "$project_dir/app/src/main/assets/www/assets/playtest/arte-gb02-r16-r01" -type f -name '*.png' | wc -l)" -eq 101
+          test "$(find "$project_dir/app/src/main/assets/www/assets/playtest/arte-gb02-r16-r01" -type f -name '*.png' | wc -l)" -eq 102
+          ladder_r17="$project_dir/app/src/main/assets/www/assets/playtest/arte-gb02-r16-r01/04_ESTRUCTURAS_CANONICAS/S012-escalera-madera-1x3_5-r17-transparent.png"
+          echo "$S012_R17_SHA256  $ladder_r17" | sha256sum -c -
           test ! -e "$project_dir/docs/BUILD_STATUS_R12.json"
           test ! -e "$project_dir/docs/BUILD_STATUS_R13.json"
           echo "PROJECT_DIR=$project_dir" >> "$GITHUB_ENV"
@@ -190,7 +192,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.PROJECT_DIR }}/app/src/main/assets/www/assets/audio
-          key: azure-r16-${{ env.R16_SHA256 }}
+          key: azure-r17-${{ env.R17_SHA256 }}
 
       - name: Validar catálogo heredado
         working-directory: ${{ env.PROJECT_DIR }}
@@ -201,21 +203,25 @@ jobs:
         working-directory: ${{ env.PROJECT_DIR }}
         run: node scripts/generate-azure-audio.mjs
 
+      - name: Validar sintaxis R17
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: node --check app/src/main/assets/www/app.js && node --check app/src/main/assets/www/graybox-game.js
+
       - name: Validar HUD R11 preservado
         working-directory: ${{ env.PROJECT_DIR }}
         run: node tests/hud-hearts-r11-smoke.mjs
 
-      - name: Validar mecánica R15 congelada dentro de R16
-        working-directory: ${{ env.PROJECT_DIR }}
-        env:
-          GB02_EVIDENCE_DIR: docs/evidencias-r16-ci
-        run: node tests/gb02-r04-smoke.mjs
-
-      - name: Validar los 101 assets funcionales R16
+      - name: Validar arte funcional y S012 transparente
         working-directory: ${{ env.PROJECT_DIR }}
         run: node tests/r16-functional-art-smoke.mjs
 
-      - name: Compilar APK candidata R16
+      - name: Validar contrato R04 y correcciones R17
+        working-directory: ${{ env.PROJECT_DIR }}
+        env:
+          GB02_EVIDENCE_DIR: docs/evidencias-r17-ci
+        run: node tests/gb02-r04-smoke.mjs
+
+      - name: Compilar APK candidata R17
         working-directory: ${{ env.PROJECT_DIR }}
         run: gradle assembleDebug
 
@@ -224,21 +230,22 @@ jobs:
         run: |
           set -euo pipefail
           apk="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
-          evidence="$RUNNER_TEMP/R16_BUILD_EVIDENCE.txt"
+          evidence="$RUNNER_TEMP/R17_BUILD_EVIDENCE.txt"
           test -f "$apk"
           {
-            echo 'EREN-GB02-R04-R16-VISUAL-CANDIDATE'
+            echo 'EREN-GB02-R04-R17-PLAYTEST-CORRECTION-CANDIDATE'
             echo "repository=$GITHUB_REPOSITORY"
             echo "branch=$GITHUB_REF_NAME"
             echo "commit=$GITHUB_SHA"
             echo "baseline_main=$BASELINE_MAIN_SHA"
-            echo 'chain=BASE+R05+R07+R08+R09+R10+R11+R14+R15+R16'
+            echo 'chain=BASE+R05+R07+R08+R09+R10+R11+R14+R15+R16+R17'
             echo 'preserved_not_applied=R12,R13'
             echo "contract_sha256=$CONTRACT_SHA256"
             echo "r14_sha256=$R14_SHA256"
             echo "r15_sha256=$R15_SHA256"
             echo "r16_sha256=$R16_SHA256"
-            echo "art_source_sha256=$ART_SOURCE_SHA256"
+            echo "r17_sha256=$R17_SHA256"
+            echo "s012_r17_sha256=$S012_R17_SHA256"
             echo 'merge_to_main=false'
             echo 'release=false'
             echo 'game_ready=false'
@@ -249,10 +256,10 @@ jobs:
       - name: Guardar APK y evidencias candidatas
         uses: actions/upload-artifact@v4
         with:
-          name: Eren-GB02-R04-R16-visual-candidate
+          name: Eren-GB02-R04-R17-playtest-correction-candidate
           path: |
             ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
-            ${{ env.PROJECT_DIR }}/docs/evidencias-r16-ci/*.json
-            ${{ runner.temp }}/R16_BUILD_EVIDENCE.txt
+            ${{ env.PROJECT_DIR }}/docs/evidencias-r17-ci/*.json
+            ${{ runner.temp }}/R17_BUILD_EVIDENCE.txt
           if-no-files-found: error
           retention-days: 30
