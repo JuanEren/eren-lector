@@ -1,248 +1,57 @@
-name: Verificar baseline R11
-run-name: R11 verificable · ${{ github.event_name }} · ${{ github.sha }}
-
+name: Compilar candidata GB02 R04 R23
 on:
   push:
-    paths:
-      - '.github/workflows/build-apk.yml'
-      - '.github/workflows/compilar-apk-incremental-r06.yml'
-      - '.github/workflows/compilar-apk.yml'
   workflow_dispatch:
-
-permissions:
-  contents: read
-
 jobs:
-  verify_r11:
-    name: Aplicar cadena cerrada R11 y compilar
+  build:
     runs-on: ubuntu-latest
     env:
       AZURE_SPEECH_KEY: ${{ secrets.AZURE_SPEECH_KEY }}
       AZURE_SPEECH_REGION: ${{ secrets.AZURE_SPEECH_REGION }}
       AZURE_SPEECH_VOICE: es-ES-ElviraNeural
-      BASE_ARCHIVE: Eren-Leo-y-entiendo-Android.zip
-      BASE_SHA256: 155ba166ebc9e4e1d4b5f2d7f1aba3ca2fa511d4e9211cb38489d7c0242f60e9
-      RECOVERY_BASE_SHA: 30f16c7ce50a9e4b7e478df4ea73d3eb55e8e5fc
-
     steps:
-      - name: Descargar repositorio completo
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Verificar que la recuperación solo cambia CI
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          mapfile -t changed_files < <(git diff --name-only "$RECOVERY_BASE_SHA"...HEAD)
-          if (( ${#changed_files[@]} == 0 )); then
-            echo "::error::La rama de recuperación no contiene cambios."
-            exit 1
-          fi
-
-          for path in "${changed_files[@]}"; do
-            case "$path" in
-              .github/workflows/build-apk.yml|.github/workflows/compilar-apk-incremental-r06.yml|.github/workflows/compilar-apk.yml)
-                ;;
-              *)
-                echo "::error::Cambio fuera del alcance CI: $path"
-                exit 1
-                ;;
-            esac
-          done
-
-          printf 'Cambios CI autorizados:\n'
-          printf ' - %s\n' "${changed_files[@]}"
-
-      - name: Verificar entradas y aplicar cadena exacta hasta R11
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          base_path="$GITHUB_WORKSPACE/$BASE_ARCHIVE"
-          if [[ ! -f "$base_path" ]]; then
-            echo "::error::Falta la base permanente $BASE_ARCHIVE."
-            exit 1
-          fi
-          echo "$BASE_SHA256  $base_path" | sha256sum -c -
-
-          required_updates=(
-            'Eren-GitHub-Actualizacion-R05.zip|54793872d6cbfd1d5538e9786fa8b2b4f14110d45bea753e7b8a90456dd79daa'
-            'Eren-GitHub-Actualizacion-R07.zip|06232bc6a71698edc4d5b4fb3dcd01d7c35a8f6e5cb51b11e5207c5b90a90b58'
-            'Eren-GitHub-Actualizacion-R08.zip|545cc13c81811324e1475b7042b9dc92ffd42c6f8fdb9285f78838b743e46491'
-            'Eren-GitHub-Actualizacion-R09.zip|29c8c8fa4c7bfecfeec10c454ed04a8544a764ca0317a9f4cdc0be385446d86e'
-            'Eren-GitHub-Actualizacion-R10.zip|500a196c3e51c1ed014b5314d9459847c0cc1a3615e4195ef8a3cd7023a87e60'
-            'Eren-GitHub-Actualizacion-R11.zip|de850e6591ea2ca2630e3386d003bb383b00820b9ee57f2625f8222ce1fd9843'
-          )
-          preserved_updates=(
-            'Eren-GitHub-Actualizacion-R12.zip|5069a166150cb3b2d3a756fb9ae0dc91fe711187e038ed9ad46657e4cb39ee2a'
-            'Eren-GitHub-Actualizacion-R13.zip|c5f260793431c3cf785d18542a2d864c6c02ca54547fea52128108c99b6146e4'
-          )
-
-          for spec in "${required_updates[@]}" "${preserved_updates[@]}"; do
-            IFS='|' read -r archive expected_sha <<< "$spec"
-            archive_path="$GITHUB_WORKSPACE/$archive"
-            if [[ ! -f "$archive_path" ]]; then
-              echo "::error::Falta $archive."
-              exit 1
-            fi
-            echo "$expected_sha  $archive_path" | sha256sum -c -
-          done
-
-          echo 'R12 y R13 están presentes e íntegros; quedan preservados y no se aplicarán.'
-
-          source_root=$(mktemp -d "$RUNNER_TEMP/eren-r11.XXXXXX")
-          unzip -q "$base_path" -d "$source_root"
-          project_dir="$source_root/eren-android"
-          if [[ ! -d "$project_dir" ]]; then
-            echo "::error::La base no contiene eren-android."
-            exit 1
-          fi
-
-          for spec in "${required_updates[@]}"; do
-            IFS='|' read -r archive expected_sha <<< "$spec"
-            archive_path="$GITHUB_WORKSPACE/$archive"
-            revision="${archive#Eren-GitHub-Actualizacion-}"
-            revision="${revision%.zip}"
-
-            archive_size=$(stat -c '%s' "$archive_path")
-            if (( archive_size > 20971520 )); then
-              echo "::error::$archive supera 20 MB."
-              exit 1
-            fi
-            if unzip -Z1 "$archive_path" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
-              echo "::error::$archive contiene una ruta no segura."
-              exit 1
-            fi
-
-            mapfile -t delete_entries < <(
-              unzip -Z1 "$archive_path" |
-                grep -E '^docs/updates/R[0-9]+/DELETE_FILES\.txt$' || true
-            )
-            mapfile -t checksum_entries < <(
-              unzip -Z1 "$archive_path" |
-                grep -E '^docs/updates/R[0-9]+/SHA256SUMS_UPDATE_R[0-9]+\.txt$' || true
-            )
-            expected_delete="docs/updates/$revision/DELETE_FILES.txt"
-            expected_checksums="docs/updates/$revision/SHA256SUMS_UPDATE_$revision.txt"
-            if (( ${#delete_entries[@]} != 1 || ${#checksum_entries[@]} != 1 )); then
-              echo "::error::$archive debe contener un único par de manifiestos."
-              exit 1
-            fi
-            if [[ "${delete_entries[0]}" != "$expected_delete" || "${checksum_entries[0]}" != "$expected_checksums" ]]; then
-              echo "::error::$archive contiene manifiestos de otra revisión."
-              exit 1
-            fi
-
-            while IFS= read -r relative || [[ -n "$relative" ]]; do
-              relative="${relative%$'\r'}"
-              [[ -z "$relative" || "$relative" == \#* ]] && continue
-              if [[ "$relative" == /* || "$relative" =~ (^|/)\.\.(/|$) ]]; then
-                echo "::error::Ruta de eliminación no segura en $archive: $relative"
-                exit 1
-              fi
-              target="$project_dir/$relative"
-              if [[ -d "$target" ]]; then
-                echo "::error::$archive intenta borrar un directorio: $relative"
-                exit 1
-              fi
-              if [[ -f "$target" || -L "$target" ]]; then
-                unlink -- "$target"
-              fi
-            done < <(unzip -p "$archive_path" "${delete_entries[0]}")
-
-            unzip -qo "$archive_path" -d "$project_dir"
-            (
-              cd "$project_dir"
-              sha256sum -c "${checksum_entries[0]}"
-            )
-            echo "Aplicada y verificada: $archive"
-          done
-
-          if [[ ! -f "$project_dir/docs/BUILD_STATUS_R11.json" ]]; then
-            echo "::error::No existe la evidencia contractual R11."
-            exit 1
-          fi
-          grep -q 'GB-PLAYTEST-20260826-R11' "$project_dir/docs/BUILD_STATUS_R11.json"
-          grep -q '"gameReady": false' "$project_dir/docs/BUILD_STATUS_R11.json"
-
-          echo "PROJECT_DIR=$project_dir" >> "$GITHUB_ENV"
-
-      - name: Preparar Java
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-
-      - name: Preparar Gradle
-        uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-
-      - name: Preparar Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Preparar Node
+      - name: Preparar Node para las locuciones
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-
       - name: Recuperar locuciones de Azure
         uses: actions/cache@v4
         with:
-          path: ${{ env.PROJECT_DIR }}/app/src/main/assets/www/assets/audio
-          key: azure-r11-155ba166-54793872-06232bc6-545cc13c-29c8c8fa-500a196c-de850e65
-
-      - name: Validar catálogo de locuciones R05
-        working-directory: ${{ env.PROJECT_DIR }}
+          path: app/src/main/assets/www/assets/audio
+          key: azure-tts-v2-${{ hashFiles('app/src/main/assets/www/app.js', 'scripts/generate-azure-audio.mjs', 'scripts/extract-audio-catalogue.mjs') }}
+      - name: Validar catálogo de locuciones en Node
         run: node tests/azure-catalogue-smoke.mjs
-
-      - name: Generar locuciones con Azure
+      - name: Generar locuciones expresivas con Azure
         if: env.AZURE_SPEECH_KEY != '' && env.AZURE_SPEECH_REGION != ''
-        working-directory: ${{ env.PROJECT_DIR }}
         run: node scripts/generate-azure-audio.mjs
-
-      - name: Validar graybox R11
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: node tests/graybox-smoke.mjs
-
-      - name: Validar HUD R11
-        working-directory: ${{ env.PROJECT_DIR }}
+      - name: Validar HUD fijo R11 preservado
         run: node tests/hud-hearts-r11-smoke.mjs
-
-      - name: Compilar APK R11
-        working-directory: ${{ env.PROJECT_DIR }}
+      - name: Validar sintaxis del runtime R23
+        run: node --check app/src/main/assets/www/app.js && node --check app/src/main/assets/www/graybox-game.js
+      - name: Validar actores funcionales heredados de R19
+        run: node tests/r16-functional-art-smoke.mjs
+      - name: Validar alfa real de la escalera R21
+        run: node tests/ladder-alpha-r21-smoke.mjs
+      - name: Validar decoración, partículas y checkpoints visuales R22
+        run: node tests/r22-decoration-smoke.mjs
+      - name: Validar atmósfera, agua, fauna y audio R23
+        run: node tests/r23-atmosphere-audio-smoke.mjs
+      - name: Validar contrato GB02 R04 y regresiones R23
+        run: node tests/gb02-r04-smoke.mjs
+      - name: Compilar APK de prueba
         run: gradle assembleDebug
-
-      - name: Generar evidencia de build
-        shell: bash
-        run: |
-          set -euo pipefail
-          apk="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
-          evidence="$RUNNER_TEMP/R11_BUILD_EVIDENCE.txt"
-          if [[ ! -f "$apk" ]]; then
-            echo "::error::No se generó app-debug.apk."
-            exit 1
-          fi
-          {
-            echo 'CI-R11-RECOVERY-VERIFY-20260826-R01'
-            echo "repository=$GITHUB_REPOSITORY"
-            echo "commit=$GITHUB_SHA"
-            echo "recovery_base=$RECOVERY_BASE_SHA"
-            echo 'chain=BASE+R05+R07+R08+R09+R10+R11'
-            echo 'preserved_not_applied=R12,R13'
-            echo 'game_changes=false'
-            sha256sum "$apk"
-          } > "$evidence"
-          cat "$evidence"
-
-      - name: Guardar APK y evidencia
+      - name: Guardar APK
         uses: actions/upload-artifact@v4
         with:
-          name: Eren-R11-CI-verification
-          path: |
-            ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
-            ${{ runner.temp }}/R11_BUILD_EVIDENCE.txt
+          name: Eren-GB02-R04-R23-APK-CANDIDATE
+          path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
