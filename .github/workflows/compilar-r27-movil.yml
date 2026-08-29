@@ -1,0 +1,124 @@
+name: Compilar candidata GB02 R04 R27 - entrega movil
+
+"on":
+  push:
+    paths:
+      - EREN_R27_PROYECTO_COMPLETO.zip.part01
+      - EREN_R27_PROYECTO_COMPLETO.zip.part02
+      - .github/workflows/compilar-r27-movil.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validar-y-compilar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      R27_ARCHIVE: .r27-build.zip
+      R27_SOURCE_DIR: .r27-build
+      AZURE_SPEECH_KEY: ${{ secrets.AZURE_SPEECH_KEY }}
+      AZURE_SPEECH_REGION: ${{ secrets.AZURE_SPEECH_REGION }}
+      AZURE_SPEECH_VOICE: es-ES-ElviraNeural
+
+    steps:
+      - name: Descargar rama seleccionada
+        uses: actions/checkout@v4
+
+      - name: Reconstruir y verificar el proyecto R27
+        shell: bash
+        run: |
+          set -euo pipefail
+          part01="EREN_R27_PROYECTO_COMPLETO.zip.part01"
+          part02="EREN_R27_PROYECTO_COMPLETO.zip.part02"
+          expected_sha="1ca96ad2c6a9b400a238cadbad40ba86fd2532c491c1bb96189edff617647501"
+
+          for part in "$part01" "$part02"; do
+            if [[ ! -f "$part" ]]; then
+              echo "::error file=$part::Falta $part en la raiz de la rama."
+              exit 1
+            fi
+          done
+
+          cat "$part01" "$part02" > "$R27_ARCHIVE"
+          actual_sha="$(sha256sum "$R27_ARCHIVE" | awk '{print $1}')"
+          if [[ "$actual_sha" != "$expected_sha" ]]; then
+            echo "::error::SHA-256 incorrecto. Esperado $expected_sha; recibido $actual_sha."
+            exit 1
+          fi
+
+          unzip -tq "$R27_ARCHIVE"
+          mkdir -p "$R27_SOURCE_DIR"
+          unzip -q "$R27_ARCHIVE" -d "$R27_SOURCE_DIR"
+
+          test -f "$R27_SOURCE_DIR/settings.gradle.kts"
+          test -f "$R27_SOURCE_DIR/app/build.gradle.kts"
+          test -f "$R27_SOURCE_DIR/tests/r26-production-polish-smoke.mjs"
+          test -f "$R27_SOURCE_DIR/tests/r27-playtest-corrections-smoke.mjs"
+          test -f "$R27_SOURCE_DIR/app/src/main/assets/www/graybox-game.js"
+
+          inherited_ogg_count="$(find "$R27_SOURCE_DIR/app/src/main/assets/www/assets/audio/r26" -maxdepth 1 -type f -name '*.ogg' | wc -l)"
+          original_ogg_count="$(find "$R27_SOURCE_DIR/app/src/main/assets/www/assets/audio/r27" -maxdepth 1 -type f -name '*.ogg' | wc -l)"
+          if [[ "$inherited_ogg_count" -ne 16 || "$original_ogg_count" -ne 9 ]]; then
+            echo "::error::Bancos de sonido incompletos: R26=$inherited_ogg_count/16, R27=$original_ogg_count/9."
+            exit 1
+          fi
+
+          echo "Proyecto R27 reconstruido y verificado: $actual_sha"
+
+      - name: Preparar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Preparar Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Preparar Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Validar catalogo educativo y locuciones
+        working-directory: .r27-build
+        run: node tests/azure-catalogue-smoke.mjs
+
+      - name: Generar locuciones expresivas con Azure cuando hay credenciales
+        if: ${{ env.AZURE_SPEECH_KEY != '' && env.AZURE_SPEECH_REGION != '' }}
+        working-directory: .r27-build
+        run: node scripts/generate-azure-audio.mjs
+
+      - name: Validar sintaxis y regresiones R27
+        working-directory: .r27-build
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check app/src/main/assets/www/app.js
+          node --check app/src/main/assets/www/graybox-game.js
+          node --check scripts/generate-r27-audio.mjs
+          node tests/hud-hearts-r11-smoke.mjs
+          node tests/r16-functional-art-smoke.mjs
+          node tests/ladder-alpha-r21-smoke.mjs
+          node tests/r22-decoration-smoke.mjs
+          node tests/r23-atmosphere-audio-smoke.mjs
+          node tests/r24-cinematic-decoration-smoke.mjs
+          node tests/r25-eren-ludo-smoke.mjs
+          node tests/r26-production-polish-smoke.mjs
+          node tests/r27-playtest-corrections-smoke.mjs
+          node tests/gb02-r04-smoke.mjs
+
+      - name: Compilar APK de prueba R27
+        working-directory: .r27-build
+        run: gradle --no-daemon assembleDebug
+
+      - name: Publicar APK candidata R27
+        uses: actions/upload-artifact@v4
+        with:
+          name: Eren-GB02-R04-R27-APK-CANDIDATE
+          path: .r27-build/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
