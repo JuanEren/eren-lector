@@ -10,8 +10,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      PROJECT_DIR: ${{ runner.temp }}/eren-r25/eren-android
-      PACKAGE_PATH: ${{ runner.temp }}/Eren-Leo-y-entiendo-Android-R25.zip
+      PROJECT_DIR: eren-r25/eren-android
+      PACKAGE_PATH: Eren-Leo-y-entiendo-Android-R25.zip
       AZURE_SPEECH_KEY: ${{ secrets.AZURE_SPEECH_KEY }}
       AZURE_SPEECH_REGION: ${{ secrets.AZURE_SPEECH_REGION }}
       AZURE_SPEECH_VOICE: es-ES-ElviraNeural
@@ -43,8 +43,8 @@ jobs:
           cat Eren-Leo-y-entiendo-Android-R25.zip.part01 Eren-Leo-y-entiendo-Android-R25.zip.part02 > "$PACKAGE_PATH"
           echo "7c1c1ebe5189b95873b8930092761740e0ff6aeff0e4539eecbee3568ca60d9a  $PACKAGE_PATH" | sha256sum --check --strict
           unzip -t "$PACKAGE_PATH"
-          mkdir -p "${{ runner.temp }}/eren-r25"
-          unzip -q "$PACKAGE_PATH" -d "${{ runner.temp }}/eren-r25"
+          mkdir -p eren-r25
+          unzip -q "$PACKAGE_PATH" -d eren-r25
           test -f "$PROJECT_DIR/settings.gradle.kts"
           test -f "$PROJECT_DIR/tests/r25-eren-ludo-smoke.mjs"
 
@@ -81,6 +81,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Eren-GB02-R04-R25-APK-CANDIDATE
-          path: ${{ runner.temp }}/eren-r25/eren-android/app/build/outputs/apk/debug/app-debug.apk
+          path: eren-r25/eren-android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
