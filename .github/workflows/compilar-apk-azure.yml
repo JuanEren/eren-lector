@@ -1,0 +1,86 @@
+name: Compilar candidata GB02 R04 R25
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_DIR: ${{ runner.temp }}/eren-r25/eren-android
+      PACKAGE_PATH: ${{ runner.temp }}/Eren-Leo-y-entiendo-Android-R25.zip
+      AZURE_SPEECH_KEY: ${{ secrets.AZURE_SPEECH_KEY }}
+      AZURE_SPEECH_REGION: ${{ secrets.AZURE_SPEECH_REGION }}
+      AZURE_SPEECH_VOICE: es-ES-ElviraNeural
+
+    steps:
+      - name: Descargar rama
+        uses: actions/checkout@v4
+
+      - name: Preparar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Preparar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Preparar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Reconstruir y validar paquete R25
+        run: |
+          test -s Eren-Leo-y-entiendo-Android-R25.zip.part01
+          test -s Eren-Leo-y-entiendo-Android-R25.zip.part02
+          cat Eren-Leo-y-entiendo-Android-R25.zip.part01 Eren-Leo-y-entiendo-Android-R25.zip.part02 > "$PACKAGE_PATH"
+          echo "7c1c1ebe5189b95873b8930092761740e0ff6aeff0e4539eecbee3568ca60d9a  $PACKAGE_PATH" | sha256sum --check --strict
+          unzip -t "$PACKAGE_PATH"
+          mkdir -p "${{ runner.temp }}/eren-r25"
+          unzip -q "$PACKAGE_PATH" -d "${{ runner.temp }}/eren-r25"
+          test -f "$PROJECT_DIR/settings.gradle.kts"
+          test -f "$PROJECT_DIR/tests/r25-eren-ludo-smoke.mjs"
+
+      - name: Validar catálogo de locuciones
+        run: cd "$PROJECT_DIR" && node tests/azure-catalogue-smoke.mjs
+
+      - name: Generar locuciones expresivas con Azure
+        if: env.AZURE_SPEECH_KEY != '' && env.AZURE_SPEECH_REGION != ''
+        run: cd "$PROJECT_DIR" && node scripts/generate-azure-audio.mjs
+
+      - name: Validar runtime y arte R25
+        run: |
+          cd "$PROJECT_DIR"
+          node --check app/src/main/assets/www/app.js
+          node --check app/src/main/assets/www/graybox-game.js
+          node tests/hud-hearts-r11-smoke.mjs
+          node tests/r16-functional-art-smoke.mjs
+          node tests/ladder-alpha-r21-smoke.mjs
+          node tests/r22-decoration-smoke.mjs
+          node tests/r23-atmosphere-audio-smoke.mjs
+          node tests/r24-cinematic-decoration-smoke.mjs
+          node tests/r25-eren-ludo-smoke.mjs
+          node tests/gb02-r04-smoke.mjs
+
+      - name: Compilar APK R25
+        run: gradle -p "$PROJECT_DIR" assembleDebug
+
+      - name: Comprobar APK resultante
+        run: |
+          test -s "$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
+          unzip -t "$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
+
+      - name: Guardar APK R25
+        uses: actions/upload-artifact@v4
+        with:
+          name: Eren-GB02-R04-R25-APK-CANDIDATE
+          path: ${{ runner.temp }}/eren-r25/eren-android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
