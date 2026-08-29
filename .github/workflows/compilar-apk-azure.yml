@@ -1,6 +1,13 @@
 name: Compilar candidata GB02 R04 R25
 
 on:
+  push:
+    branches:
+      - 'codex/gb02-r25-eren-ludo-20260829'
+    paths:
+      - '.github/workflows/compilar-apk-azure.yml'
+      - 'Eren-Leo-y-entiendo-Android-R25.zip.part01'
+      - 'Eren-Leo-y-entiendo-Android-R25.zip.part02'
   workflow_dispatch:
 
 permissions:
