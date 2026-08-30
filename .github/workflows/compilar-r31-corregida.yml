@@ -2,6 +2,14 @@ name: Reconstruir y compilar R31 corregida
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - codex/eren-r31-integrated-playtest
+    paths:
+      - EREN_R31_GITHUB_CORREGIDO.zip.part01
+      - EREN_R31_GITHUB_CORREGIDO.zip.part02
+      - EREN_R31_GITHUB_CORREGIDO.zip.part03
+      - .github/workflows/compilar-r31-corregida.yml
 
 jobs:
   build:
