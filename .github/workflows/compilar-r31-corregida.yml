@@ -1,0 +1,60 @@
+name: Reconstruir y compilar R31 corregida
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verificar tamaños y reconstruir la fuente
+        shell: bash
+        run: |
+          test -f EREN_R31_GITHUB_CORREGIDO.zip.part01
+          test -f EREN_R31_GITHUB_CORREGIDO.zip.part02
+          test -f EREN_R31_GITHUB_CORREGIDO.zip.part03
+          test "$(stat -c%s EREN_R31_GITHUB_CORREGIDO.zip.part01)" -lt 20000000
+          test "$(stat -c%s EREN_R31_GITHUB_CORREGIDO.zip.part02)" -lt 20000000
+          test "$(stat -c%s EREN_R31_GITHUB_CORREGIDO.zip.part03)" -lt 20000000
+          cat EREN_R31_GITHUB_CORREGIDO.zip.part01 EREN_R31_GITHUB_CORREGIDO.zip.part02 EREN_R31_GITHUB_CORREGIDO.zip.part03 > EREN_R31_GITHUB_CORREGIDO.zip
+          echo "fd3a4cad19f5920c175d931ccfcc501c22f5810b59ba76097da0d5cc472e42b8  EREN_R31_GITHUB_CORREGIDO.zip" | sha256sum -c -
+          unzip -q EREN_R31_GITHUB_CORREGIDO.zip
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Validar paquete paralelo y runtime R31
+        working-directory: EREN_R31_SOURCE
+        run: |
+          grep -F 'applicationId = "com.juaneren.r31"' app/build.gradle.kts
+          node --check app/src/main/assets/www/app.js
+          node --check app/src/main/assets/www/graybox-game.js
+          node --check app/src/main/assets/www/r31-playtest-config.js
+          node tests/r31-integrated-smoke.mjs
+
+      - name: Compilar APK
+        working-directory: EREN_R31_SOURCE
+        run: gradle assembleDebug
+
+      - name: Preparar artefacto
+        run: cp EREN_R31_SOURCE/app/build/outputs/apk/debug/app-debug.apk EREN_R31_INSTALLABLE_PARALLEL_CANDIDATE.apk
+
+      - name: Guardar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Eren-R31-INSTALLABLE-PARALLEL-CANDIDATE
+          path: EREN_R31_INSTALLABLE_PARALLEL_CANDIDATE.apk
+          if-no-files-found: error
+          retention-days: 30
